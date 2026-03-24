@@ -107,7 +107,7 @@ module robot_rental_platform::rental_escrow {
         registry: &mut RobotRegistry,
         robot_id: ID,
         duration_hours: u64,
-        payment: Coin<TREAT_TOKEN>,
+        mut payment: Coin<TREAT_TOKEN>,
         clock: &Clock,
         ctx: &mut TxContext,
     ): RentalCap {
@@ -124,6 +124,11 @@ module robot_rental_platform::rental_escrow {
 
         robot_registry::set_availability(registry, robot_id, false);
 
+        // Split exact amount needed, refund excess to sender
+        if (paid > required_amount) {
+            let refund_coin = coin::split(&mut payment, paid - required_amount, ctx);
+            transfer::public_transfer(refund_coin, tx_context::sender(ctx));
+        };
         let payment_balance = coin::into_balance(payment);
         balance::join(&mut escrow.escrowed_funds, payment_balance);
 
@@ -137,7 +142,7 @@ module robot_rental_platform::rental_escrow {
             start_time: sui::clock::timestamp_ms(clock),
             max_duration_ms,
             hourly_rate,
-            escrowed_amount: paid,
+            escrowed_amount: required_amount,
             is_active: true,
         };
 
@@ -149,7 +154,7 @@ module robot_rental_platform::rental_escrow {
             robot_id,
             renter,
             max_duration_ms,
-            escrowed_amount: paid,
+            escrowed_amount: required_amount,
         });
 
         RentalCap { id: cap_uid, rental_id, robot_id, renter }

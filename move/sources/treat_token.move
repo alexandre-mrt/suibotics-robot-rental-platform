@@ -102,6 +102,7 @@ module robot_rental_platform::treat_token {
         transfer::public_transfer(minted, sender);
     }
 
+    #[test_only]
     public fun mint_for_testing(
         faucet: &mut FaucetState,
         amount: u64,
