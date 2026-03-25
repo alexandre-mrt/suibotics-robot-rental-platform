@@ -1,18 +1,9 @@
 module robot_rental_platform::treat_token_tests {
-    use sui::test_scenario::{Self as ts, Scenario};
+    use sui::test_scenario::{Self as ts};
     use sui::clock;
     use robot_rental_platform::treat_token::{Self, FaucetState};
 
     const ALICE: address = @0xA11CE;
-
-    fun setup(): Scenario {
-        let mut scenario = ts::begin(ALICE);
-        {
-            let ctx = ts::ctx(&mut scenario);
-            treat_token::init_for_testing(ctx);
-        };
-        scenario
-    }
 
     #[test]
     fun test_claim_faucet() {
@@ -53,8 +44,6 @@ module robot_rental_platform::treat_token_tests {
             clock::set_for_testing(&mut clock, 0);
 
             // Claim 5 times (max per epoch)
-            let i = 0;
-            let _ = i;
             treat_token::claim_faucet(&mut faucet, &clock, ts::ctx(&mut scenario));
             treat_token::claim_faucet(&mut faucet, &clock, ts::ctx(&mut scenario));
             treat_token::claim_faucet(&mut faucet, &clock, ts::ctx(&mut scenario));

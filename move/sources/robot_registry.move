@@ -5,6 +5,7 @@ module robot_rental_platform::robot_registry {
     // ===== Errors =====
     const ENotOwner: u64 = 0;
     const ERobotNotFound: u64 = 1;
+    const EInvalidRate: u64 = 3;
 
     // ===== Shared Objects =====
     public struct RobotRegistry has key {
@@ -66,7 +67,8 @@ module robot_rental_platform::robot_registry {
         hourly_rate: u64,
         ctx: &mut TxContext,
     ): OwnerCap {
-        let owner = tx_context::sender(ctx);
+        assert!(hourly_rate > 0, EInvalidRate);
+        let owner = ctx.sender();
         let cap_uid = object::new(ctx);
         let robot_id = object::uid_to_inner(&cap_uid);
 
@@ -80,10 +82,10 @@ module robot_rental_platform::robot_registry {
             total_earned: 0,
         };
 
-        table::add(&mut registry.robots, robot_id, info);
+        registry.robots.add(robot_id, info);
         registry.robot_count = registry.robot_count + 1;
 
-        let registered_info = table::borrow(&registry.robots, robot_id);
+        let registered_info = registry.robots.borrow(robot_id);
 
         sui::event::emit(RobotRegistered {
             robot_id,
@@ -100,10 +102,11 @@ module robot_rental_platform::robot_registry {
         cap: &OwnerCap,
         new_rate: u64,
     ) {
+        assert!(new_rate > 0, EInvalidRate);
         let robot_id = cap.robot_id;
-        assert!(table::contains(&registry.robots, robot_id), ERobotNotFound);
+        assert!(registry.robots.contains(robot_id), ERobotNotFound);
 
-        let info = table::borrow_mut(&mut registry.robots, robot_id);
+        let info = registry.robots.borrow_mut(robot_id);
         assert!(info.owner == cap.owner, ENotOwner);
         info.hourly_rate = new_rate;
 
@@ -115,9 +118,9 @@ module robot_rental_platform::robot_registry {
         cap: &OwnerCap,
     ) {
         let robot_id = cap.robot_id;
-        assert!(table::contains(&registry.robots, robot_id), ERobotNotFound);
+        assert!(registry.robots.contains(robot_id), ERobotNotFound);
 
-        let info = table::borrow_mut(&mut registry.robots, robot_id);
+        let info = registry.robots.borrow_mut(robot_id);
         assert!(info.owner == cap.owner, ENotOwner);
         info.is_available = !info.is_available;
 
@@ -128,8 +131,8 @@ module robot_rental_platform::robot_registry {
     }
 
     public fun get_robot_info(registry: &RobotRegistry, robot_id: ID): &RobotInfo {
-        assert!(table::contains(&registry.robots, robot_id), ERobotNotFound);
-        table::borrow(&registry.robots, robot_id)
+        assert!(registry.robots.contains(robot_id), ERobotNotFound);
+        registry.robots.borrow(robot_id)
     }
 
     /// Returns empty vector — full iteration requires off-chain indexing in Sui.
@@ -144,8 +147,8 @@ module robot_rental_platform::robot_registry {
         robot_id: ID,
         available: bool,
     ) {
-        assert!(table::contains(&registry.robots, robot_id), ERobotNotFound);
-        let info = table::borrow_mut(&mut registry.robots, robot_id);
+        assert!(registry.robots.contains(robot_id), ERobotNotFound);
+        let info = registry.robots.borrow_mut(robot_id);
         info.is_available = available;
     }
 
@@ -154,15 +157,15 @@ module robot_rental_platform::robot_registry {
         robot_id: ID,
         earned: u64,
     ) {
-        assert!(table::contains(&registry.robots, robot_id), ERobotNotFound);
-        let info = table::borrow_mut(&mut registry.robots, robot_id);
+        assert!(registry.robots.contains(robot_id), ERobotNotFound);
+        let info = registry.robots.borrow_mut(robot_id);
         info.total_rentals = info.total_rentals + 1;
         info.total_earned = info.total_earned + earned;
     }
 
     public(package) fun robot_owner(registry: &RobotRegistry, robot_id: ID): address {
-        assert!(table::contains(&registry.robots, robot_id), ERobotNotFound);
-        table::borrow(&registry.robots, robot_id).owner
+        assert!(registry.robots.contains(robot_id), ERobotNotFound);
+        registry.robots.borrow(robot_id).owner
     }
 
     // ===== Accessors for RobotInfo =====
@@ -178,12 +181,12 @@ module robot_rental_platform::robot_registry {
     public fun registry_count(registry: &RobotRegistry): u64 { registry.robot_count }
 
     public fun robot_exists(registry: &RobotRegistry, robot_id: ID): bool {
-        table::contains(&registry.robots, robot_id)
+        registry.robots.contains(robot_id)
     }
 
     public fun is_available(registry: &RobotRegistry, robot_id: ID): bool {
-        assert!(table::contains(&registry.robots, robot_id), ERobotNotFound);
-        table::borrow(&registry.robots, robot_id).is_available
+        assert!(registry.robots.contains(robot_id), ERobotNotFound);
+        registry.robots.borrow(robot_id).is_available
     }
 
     // ===== Test helpers =====

@@ -1,7 +1,6 @@
 module robot_rental_platform::rental_escrow_tests {
     use sui::test_scenario::{Self as ts};
     use sui::clock;
-    use sui::coin;
     use std::string;
     use robot_rental_platform::treat_token::{Self, FaucetState, TREAT_TOKEN};
     use robot_rental_platform::robot_registry::{Self, RobotRegistry};

@@ -1,7 +1,5 @@
 module robot_rental_platform::command_auth_tests {
     use sui::test_scenario::{Self as ts};
-    use sui::clock;
-    use std::string;
     use robot_rental_platform::command_auth::{Self, CommandAuth};
 
     const ALICE: address = @0xA11CE;
