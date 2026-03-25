@@ -46,7 +46,7 @@ module robot_rental_platform::command_auth {
         auth: &mut CommandAuth,
         ctx: &mut TxContext,
     ): vector<u8> {
-        let sender = tx_context::sender(ctx);
+        let sender = ctx.sender();
 
         auth.nonce = auth.nonce + 1;
         let nonce = auth.nonce;
@@ -74,14 +74,14 @@ module robot_rental_platform::command_auth {
         };
 
         // Store or overwrite challenge for this sender
-        if (table::contains(&auth.challenges, sender)) {
-            let existing = table::borrow_mut(&mut auth.challenges, sender);
+        if (auth.challenges.contains(sender)) {
+            let existing = auth.challenges.borrow_mut(sender);
             *existing = result;
         } else {
-            table::add(&mut auth.challenges, sender, result);
+            auth.challenges.add(sender, result);
         };
 
-        let stored_challenge = *table::borrow(&auth.challenges, sender);
+        let stored_challenge = *auth.challenges.borrow(sender);
 
         sui::event::emit(ChallengeIssued {
             renter: sender,
@@ -101,20 +101,20 @@ module robot_rental_platform::command_auth {
         clock: &Clock,
         ctx: &mut TxContext,
     ) {
-        let sender = tx_context::sender(ctx);
+        let sender = ctx.sender();
 
         // Verify active rental via RentalCap (cap existence proves active rental rights)
         assert!(rental_escrow::rental_cap_renter(rental_cap) == sender, ENoActiveRental);
 
-        assert!(table::contains(&auth.challenges, sender), ENoPendingChallenge);
+        assert!(auth.challenges.contains(sender), ENoPendingChallenge);
 
-        let challenge = *table::borrow(&auth.challenges, sender);
+        let challenge = *auth.challenges.borrow(sender);
 
         let valid = ed25519::ed25519_verify(&signature, &public_key, &challenge);
         assert!(valid, EInvalidSignature);
 
         // Consume challenge (one-time use)
-        let _ = table::remove(&mut auth.challenges, sender);
+        let _ = auth.challenges.remove(sender);
 
         let robot_id = rental_escrow::rental_cap_robot_id(rental_cap);
         let _ = clock;

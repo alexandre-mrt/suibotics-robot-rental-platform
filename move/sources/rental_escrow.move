@@ -12,9 +12,11 @@ module robot_rental_platform::rental_escrow {
     const ERentalNotActive: u64 = 2;
     const ENotRenter: u64 = 3;
     const ERentalNotExpired: u64 = 4;
+    const EDurationTooLong: u64 = 5;
 
     // ===== Constants =====
     const MS_PER_HOUR: u64 = 3_600_000;
+    const MAX_DURATION_HOURS: u64 = 8760;
 
     // ===== Shared Objects =====
     public struct RentalEscrow has key {
@@ -98,7 +100,7 @@ module robot_rental_platform::rental_escrow {
         transfer::share_object(escrow);
 
         let admin_cap = AdminCap { id: object::new(ctx) };
-        transfer::transfer(admin_cap, tx_context::sender(ctx));
+        transfer::transfer(admin_cap, ctx.sender());
     }
 
     // ===== Public Functions =====
@@ -112,6 +114,7 @@ module robot_rental_platform::rental_escrow {
         ctx: &mut TxContext,
     ): RentalCap {
         assert!(robot_registry::is_available(registry, robot_id), ERobotUnavailable);
+        assert!(duration_hours <= MAX_DURATION_HOURS, EDurationTooLong);
 
         let robot_info = robot_registry::get_robot_info(registry, robot_id);
         let hourly_rate = robot_registry::info_hourly_rate(robot_info);
@@ -119,7 +122,7 @@ module robot_rental_platform::rental_escrow {
         let max_duration_ms = duration_hours * MS_PER_HOUR;
         let required_amount = hourly_rate * duration_hours;
 
-        let paid = coin::value(&payment);
+        let paid = payment.value();
         assert!(paid >= required_amount, EInsufficientPayment);
 
         robot_registry::set_availability(registry, robot_id, false);
@@ -127,12 +130,12 @@ module robot_rental_platform::rental_escrow {
         // Split exact amount needed, refund excess to sender
         if (paid > required_amount) {
             let refund_coin = coin::split(&mut payment, paid - required_amount, ctx);
-            transfer::public_transfer(refund_coin, tx_context::sender(ctx));
+            transfer::public_transfer(refund_coin, ctx.sender());
         };
         let payment_balance = coin::into_balance(payment);
         balance::join(&mut escrow.escrowed_funds, payment_balance);
 
-        let renter = tx_context::sender(ctx);
+        let renter = ctx.sender();
         let cap_uid = object::new(ctx);
         let rental_id = object::uid_to_inner(&cap_uid);
 
@@ -146,7 +149,7 @@ module robot_rental_platform::rental_escrow {
             is_active: true,
         };
 
-        table::add(&mut escrow.active_rentals, rental_id, agreement);
+        escrow.active_rentals.add(rental_id, agreement);
         escrow.total_rentals = escrow.total_rentals + 1;
 
         sui::event::emit(RentalCreated {
@@ -170,31 +173,36 @@ module robot_rental_platform::rental_escrow {
         let RentalCap { id: cap_id, rental_id, robot_id, renter } = rental_cap;
         object::delete(cap_id);
 
-        assert!(table::contains(&escrow.active_rentals, rental_id), ERentalNotActive);
+        assert!(escrow.active_rentals.contains(rental_id), ERentalNotActive);
 
-        let sender = tx_context::sender(ctx);
+        let sender = ctx.sender();
         assert!(sender == renter, ENotRenter);
 
-        let agreement = table::borrow_mut(&mut escrow.active_rentals, rental_id);
-        assert!(agreement.is_active, ERentalNotActive);
+        let RentalAgreement {
+            renter: _,
+            robot_id: _,
+            start_time,
+            max_duration_ms,
+            hourly_rate,
+            escrowed_amount,
+            is_active,
+        } = escrow.active_rentals.remove(rental_id);
+        assert!(is_active, ERentalNotActive);
 
         let current_time = sui::clock::timestamp_ms(clock);
-        let elapsed_ms = current_time - agreement.start_time;
-        let actual_duration_ms = if (elapsed_ms > agreement.max_duration_ms) {
-            agreement.max_duration_ms
+        let elapsed_ms = current_time - start_time;
+        let actual_duration_ms = if (elapsed_ms > max_duration_ms) {
+            max_duration_ms
         } else {
             elapsed_ms
         };
 
         // Calculate cost: ceil(actual_duration_ms / MS_PER_HOUR) * hourly_rate
         let hours_used = (actual_duration_ms + MS_PER_HOUR - 1) / MS_PER_HOUR;
-        let actual_cost = hours_used * agreement.hourly_rate;
-        let escrowed = agreement.escrowed_amount;
+        let actual_cost = hours_used * hourly_rate;
 
-        let cost = if (actual_cost > escrowed) { escrowed } else { actual_cost };
-        let refund_amount = escrowed - cost;
-
-        agreement.is_active = false;
+        let cost = if (actual_cost > escrowed_amount) { escrowed_amount } else { actual_cost };
+        let refund_amount = escrowed_amount - cost;
 
         let robot_owner = robot_registry::robot_owner(registry, robot_id);
         robot_registry::set_availability(registry, robot_id, true);
@@ -257,23 +265,26 @@ module robot_rental_platform::rental_escrow {
         // Workaround: caller provides robot_id and we use it as rental_id (only works if they match in test).
         let rental_id = robot_id;
 
-        assert!(table::contains(&escrow.active_rentals, rental_id), ERentalNotActive);
+        assert!(escrow.active_rentals.contains(rental_id), ERentalNotActive);
 
-        let agreement = table::borrow_mut(&mut escrow.active_rentals, rental_id);
-        assert!(agreement.is_active, ERentalNotActive);
-
-        let renter = agreement.renter;
-        let escrowed = agreement.escrowed_amount;
-        let stored_robot_id = agreement.robot_id;
-        agreement.is_active = false;
+        let RentalAgreement {
+            renter,
+            robot_id: stored_robot_id,
+            start_time: _,
+            max_duration_ms: _,
+            hourly_rate: _,
+            escrowed_amount,
+            is_active,
+        } = escrow.active_rentals.remove(rental_id);
+        assert!(is_active, ERentalNotActive);
 
         let _ = clock;
 
         robot_registry::set_availability(registry, stored_robot_id, true);
 
         // Refund renter in full on force-end
-        if (escrowed > 0) {
-            let refund = balance::split(&mut escrow.escrowed_funds, escrowed);
+        if (escrowed_amount > 0) {
+            let refund = balance::split(&mut escrow.escrowed_funds, escrowed_amount);
             transfer::public_transfer(coin::from_balance(refund, ctx), renter);
         };
 
@@ -284,8 +295,8 @@ module robot_rental_platform::rental_escrow {
     }
 
     public fun get_rental_info(escrow: &RentalEscrow, rental_id: ID): &RentalAgreement {
-        assert!(table::contains(&escrow.active_rentals, rental_id), ERentalNotActive);
-        table::borrow(&escrow.active_rentals, rental_id)
+        assert!(escrow.active_rentals.contains(rental_id), ERentalNotActive);
+        escrow.active_rentals.borrow(rental_id)
     }
 
     // ===== Package-visible (used by command_auth) =====

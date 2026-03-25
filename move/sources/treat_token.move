@@ -66,12 +66,13 @@ module robot_rental_platform::treat_token {
         clock: &Clock,
         ctx: &mut TxContext,
     ) {
-        let sender = tx_context::sender(ctx);
-        let current_epoch = tx_context::epoch(ctx);
+        let sender = ctx.sender();
+        let current_epoch = ctx.epoch();
+        // clock parameter reserved for future use (e.g., time-based rate limiting)
         let _ = clock;
 
-        if (table::contains(&faucet.claims, sender)) {
-            let entry = table::borrow_mut(&mut faucet.claims, sender);
+        if (faucet.claims.contains(sender)) {
+            let entry = faucet.claims.borrow_mut(sender);
             if (entry.epoch == current_epoch) {
                 assert!(entry.count < CLAIMS_PER_EPOCH, EFaucetRateLimitExceeded);
                 entry.count = entry.count + 1;
@@ -80,7 +81,7 @@ module robot_rental_platform::treat_token {
                 entry.count = 1;
             }
         } else {
-            table::add(&mut faucet.claims, sender, EpochClaims {
+            faucet.claims.add(sender, EpochClaims {
                 epoch: current_epoch,
                 count: 1,
             });
