@@ -8,6 +8,7 @@ module robot_rental_platform::command_auth {
     const EInvalidSignature: u64 = 0;
     const ENoActiveRental: u64 = 1;
     const ENoPendingChallenge: u64 = 2;
+    const ENotImplemented: u64 = 3;
 
     // ===== Constants =====
     const CHALLENGE_BYTES: u64 = 32;
@@ -130,9 +131,10 @@ module robot_rental_platform::command_auth {
         _escrow: &RentalEscrow,
         _addr: address,
     ): bool {
-        // NIGHT-SHIFT-REVIEW: cannot iterate Table in Move to check active rental by address.
-        // This always returns true. Real check done by RentalCap possession off-chain.
-        true
+        // Cannot iterate Table in Move to check active rental by address.
+        // Abort instead of silently returning true, which would bypass authorization.
+        // Callers must use RentalCap possession as proof of active rental.
+        abort ENotImplemented
     }
 
     public fun challenge_bytes(): u64 { CHALLENGE_BYTES }

@@ -13,6 +13,7 @@ module robot_rental_platform::rental_escrow {
     const ENotRenter: u64 = 3;
     const ERentalNotExpired: u64 = 4;
     const EDurationTooLong: u64 = 5;
+    const ENotImplemented: u64 = 6;
 
     // ===== Constants =====
     const MS_PER_HOUR: u64 = 3_600_000;
@@ -301,14 +302,13 @@ module robot_rental_platform::rental_escrow {
 
     // ===== Package-visible (used by command_auth) =====
     public(package) fun has_active_rental_by_addr(
-        escrow: &RentalEscrow,
+        _escrow: &RentalEscrow,
         _addr: address,
     ): bool {
-        // Cannot iterate Table in Move. Returns true by default for package use.
-        // Actual check done via RentalCap existence off-chain.
-        // NIGHT-SHIFT-REVIEW: no efficient way to check "has active rental by address" without indexer
-        let _ = escrow;
-        true
+        // Cannot iterate Table in Move to find rentals by address.
+        // Abort instead of silently returning true, which would bypass authorization.
+        // Callers must use RentalCap possession as proof of active rental.
+        abort ENotImplemented
     }
 
     public(package) fun rental_cap_robot_id(cap: &RentalCap): ID { cap.robot_id }

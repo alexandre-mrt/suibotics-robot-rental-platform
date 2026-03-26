@@ -5,6 +5,7 @@ module robot_rental_platform::reputation {
     // ===== Errors =====
     const EInvalidScore: u64 = 0;
     const ESelfReview: u64 = 1;
+    const EAlreadyReviewed: u64 = 2;
 
     // ===== Constants =====
     const MIN_SCORE: u8 = 1;
@@ -14,6 +15,7 @@ module robot_rental_platform::reputation {
     public struct ReputationRegistry has key {
         id: UID,
         ratings: Table<address, UserRating>,
+        reviewed_rentals: Table<ID, bool>,
         total_reviews: u64,
     }
 
@@ -46,6 +48,7 @@ module robot_rental_platform::reputation {
         let registry = ReputationRegistry {
             id: object::new(ctx),
             ratings: table::new(ctx),
+            reviewed_rentals: table::new(ctx),
             total_reviews: 0,
         };
         transfer::share_object(registry);
@@ -64,6 +67,7 @@ module robot_rental_platform::reputation {
         let reviewer = ctx.sender();
         assert!(reviewer != reviewed, ESelfReview);
         assert!(score >= MIN_SCORE && score <= MAX_SCORE, EInvalidScore);
+        assert!(!registry.reviewed_rentals.contains(rental_id), EAlreadyReviewed);
 
         let score_u64 = (score as u64);
 
@@ -81,6 +85,7 @@ module robot_rental_platform::reputation {
         };
 
         registry.total_reviews = registry.total_reviews + 1;
+        registry.reviewed_rentals.add(rental_id, true);
 
         sui::event::emit(ReviewSubmitted {
             reviewer,
