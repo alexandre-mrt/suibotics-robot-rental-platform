@@ -212,6 +212,31 @@ module robot_rental_platform::reputation_tests {
     }
 
     #[test]
+    #[expected_failure(abort_code = reputation::EAlreadyReviewed)]
+    fun test_duplicate_review_same_rental_fails() {
+        let mut scenario = ts::begin(ALICE);
+        { reputation::init_for_testing(ts::ctx(&mut scenario)); };
+
+        ts::next_tx(&mut scenario, ALICE);
+        {
+            let mut registry = ts::take_shared<ReputationRegistry>(&scenario);
+            let clk = clock::create_for_testing(ts::ctx(&mut scenario));
+            let rental_id = dummy_rental_id(&mut scenario);
+
+            // First review succeeds
+            reputation::submit_review(&mut registry, BOB, 4, rental_id, &clk, ts::ctx(&mut scenario));
+
+            // Second review with same rental_id should fail
+            reputation::submit_review(&mut registry, BOB, 5, rental_id, &clk, ts::ctx(&mut scenario));
+
+            clock::destroy_for_testing(clk);
+            ts::return_shared(registry);
+        };
+
+        ts::end(scenario);
+    }
+
+    #[test]
     fun test_review_receipt_minted() {
         let mut scenario = ts::begin(ALICE);
         { reputation::init_for_testing(ts::ctx(&mut scenario)); };
